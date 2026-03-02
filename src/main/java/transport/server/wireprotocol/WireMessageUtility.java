@@ -26,7 +26,8 @@ public class WireMessageUtility {
             case ROW_DESCRIPTION -> "D";
             case DATA_ROW -> "T";
             case COMMAND_COMPLETE -> "C";
-            case ERROR -> "E";
+          case TERMINATE -> "X";
+          case ERROR -> "E";
         };
     }
 
@@ -47,6 +48,7 @@ public class WireMessageUtility {
             case "T" -> WireMessageType.DATA_ROW;
             case "C" -> WireMessageType.COMMAND_COMPLETE;
             case "E" -> WireMessageType.ERROR;
+            case "X" -> WireMessageType.TERMINATE;
             default -> throw new IllegalArgumentException("Invalid type: " + type);
         };
     }

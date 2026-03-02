@@ -4,9 +4,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
 import queryprocessor.ExecutionQuery;
 import queryprocessor.QueryHandlerManager;
+import transport.server.wireprotocol.MessageChannel;
+import transport.server.wireprotocol.ProtocolException;
+import transport.server.wireprotocol.SocketMessageChannel;
 import transport.server.wireprotocol.WireMessage;
 import transport.server.wireprotocol.WireMessageUtility;
-import transport.server.wireprotocol.WireProtocolManager;
+import transport.server.wireprotocol.WireMessageUtility.WireMessageType;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -22,37 +25,42 @@ public class ClientHandler implements Runnable {
 
   @Override
   public void run() {
-    try (this.clientSocket) {
-      var wireProtocolManager = new WireProtocolManager(this.clientSocket);
+    try (MessageChannel channel = new SocketMessageChannel(this.clientSocket)) {
       log.info("client connected: {}", clientSocket.getInetAddress());
       while (true) {
         WireMessage initialReadyQueryMessage =
-            new WireMessage(WireMessageUtility.WireMessageType.READY_FOR_QUERY, "");
-        wireProtocolManager.send(initialReadyQueryMessage);
+            new WireMessage(WireMessageType.READY_FOR_QUERY, "");
+        channel.send(initialReadyQueryMessage);
         //                ensure at some point a client message terminates a session.
-        WireMessage message = wireProtocolManager.receive();
-        if (message.messageType() == WireMessageUtility.WireMessageType.TERMINATE) {
+        WireMessage message = channel.receive();
+        if (message.messageType() == WireMessageType.TERMINATE) {
+          log.info("client disconnected: {}", clientSocket.getInetAddress());
           break;
         }
 
-        if (message.messageType() != WireMessageUtility.WireMessageType.QUERY) {
+        if (message.messageType() != WireMessageType.QUERY) {
           throw new IllegalArgumentException("Invalid message type: " + message.messageType());
         }
 
         ExecutionQuery executionQuery = QueryHandlerManager.executeQuery(message.messagePayload());
-        wireProtocolManager.send(
+        channel.send(
             new WireMessage(
-                WireMessageUtility.WireMessageType.ROW_DESCRIPTION,
+                WireMessageType.ROW_DESCRIPTION,
                 executionQuery.getColumnsMetadata()));
         executionQuery
             .executeRows()
             .forEachOrdered(
                 dataRow -> {
                   var newMessage =
-                      new WireMessage(WireMessageUtility.WireMessageType.DATA_ROW, dataRow.toString());
-                  wireProtocolManager.send(newMessage);
+                      new WireMessage(
+                          WireMessageType.DATA_ROW, dataRow.toString());
+                  try {
+                    channel.send(newMessage);
+                  } catch (IOException e) {
+                    throw new ProtocolException("Failed to send data row", e);
+                  }
                 });
-        wireProtocolManager.send(
+        channel.send(
             new WireMessage(
                 WireMessageUtility.WireMessageType.COMMAND_COMPLETE,
                 executionQuery.getCommandCompleteMessage()));

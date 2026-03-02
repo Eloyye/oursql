@@ -26,7 +26,7 @@ public class WireProtocol {
             log.error("Unexpected end of stream; type: {}, expected: {}", typeByte, -1);
             throw new IOException("Unexpected end of stream");
         }
-        var wireMessageType = WireMessageUtility.stringToType(String.valueOf(typeByte));
+        var wireMessageType = WireMessageUtility.stringToType(String.valueOf((char) typeByte));
         var payloadBytes = inputStream.readNBytes(4);
         if (payloadBytes.length != 4) {
             log.error("Unexpected end of stream; payload: {}, expected: {}", payloadBytes.length, 4);
