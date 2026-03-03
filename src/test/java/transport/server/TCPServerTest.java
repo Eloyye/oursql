@@ -23,110 +23,112 @@ import org.junit.jupiter.api.Test;
 @Slf4j
 class TCPServerTest {
 
-    @Test
-    void listen_acceptsConnection_submitsClientHandler() throws Exception {
-        ExecutorService executor = mock(ExecutorService.class);
-        int port = findFreePort();
-        TCPServer server = new TCPServer(executor, port);
+  @Test
+  void listen_acceptsConnection_submitsClientHandler() throws Exception {
+    ExecutorService executor = mock(ExecutorService.class);
+    int port = findFreePort();
+    TCPServer server = new TCPServer(executor, port);
 
-        AtomicReference<@Nullable Throwable> listenFailure = new AtomicReference<>();
-        Thread serverThread = startServerThread(server, listenFailure);
+    AtomicReference<@Nullable Throwable> listenFailure = new AtomicReference<>();
+    Thread serverThread = startServerThread(server, listenFailure);
 
-        try (Socket ignored = connectWithRetry(port)) {
-            verify(executor, timeout(2_000).times(1)).submit(any(Runnable.class));
-        } finally {
-            server.close();
-            serverThread.join(2_000);
-        }
-
-        assertFalse(serverThread.isAlive());
-        assertNull(listenFailure.get());
+    try (Socket ignored = connectWithRetry(port)) {
+      verify(executor, timeout(2_000).times(1)).submit(any(Runnable.class));
+    } finally {
+      server.close();
+      serverThread.join(2_000);
     }
 
-    @Test
-    void listen_acceptsMultipleConnections_submitsPerClient() throws Exception {
-        ExecutorService executor = mock(ExecutorService.class);
-        int port = findFreePort();
-        TCPServer server = new TCPServer(executor, port);
+    assertFalse(serverThread.isAlive());
+    assertNull(listenFailure.get());
+  }
 
-        AtomicReference<@Nullable Throwable> listenFailure = new AtomicReference<>();
-        Thread serverThread = startServerThread(server, listenFailure);
+  @Test
+  void listen_acceptsMultipleConnections_submitsPerClient() throws Exception {
+    ExecutorService executor = mock(ExecutorService.class);
+    int port = findFreePort();
+    TCPServer server = new TCPServer(executor, port);
 
-        try (Socket ignored1 = connectWithRetry(port);
-             Socket ignored2 = connectWithRetry(port);
-             Socket ignored3 = connectWithRetry(port)) {
-            verify(executor, timeout(2_000).times(3)).submit(any(Runnable.class));
-        } finally {
-            server.close();
-            serverThread.join(2_000);
-        }
+    AtomicReference<@Nullable Throwable> listenFailure = new AtomicReference<>();
+    Thread serverThread = startServerThread(server, listenFailure);
 
-        assertFalse(serverThread.isAlive());
-        assertNull(listenFailure.get());
+    try (Socket ignored1 = connectWithRetry(port);
+        Socket ignored2 = connectWithRetry(port);
+        Socket ignored3 = connectWithRetry(port)) {
+      verify(executor, timeout(2_000).times(3)).submit(any(Runnable.class));
+    } finally {
+      server.close();
+      serverThread.join(2_000);
     }
 
-    @Test
-    void listen_whenPortInUse_throwsIOException() throws IOException {
-        ExecutorService executor = mock(ExecutorService.class);
+    assertFalse(serverThread.isAlive());
+    assertNull(listenFailure.get());
+  }
 
-        try (ServerSocket occupiedSocket = new ServerSocket(0)) {
-            TCPServer server = new TCPServer(executor, occupiedSocket.getLocalPort());
+  @Test
+  void listen_whenPortInUse_throwsIOException() throws IOException {
+    ExecutorService executor = mock(ExecutorService.class);
 
-            assertThrows(IOException.class, server::listen);
-        }
+    try (ServerSocket occupiedSocket = new ServerSocket(0)) {
+      TCPServer server = new TCPServer(executor, occupiedSocket.getLocalPort());
+
+      assertThrows(IOException.class, server::listen);
+    }
+  }
+
+  @Test
+  void close_stopsListeningThreadGracefully() throws Exception {
+    ExecutorService executor = mock(ExecutorService.class);
+    int port = findFreePort();
+    TCPServer server = new TCPServer(executor, port);
+
+    AtomicReference<@Nullable Throwable> listenFailure = new AtomicReference<>();
+    Thread serverThread = startServerThread(server, listenFailure);
+
+    try (Socket ignored = connectWithRetry(port)) {
+      verify(executor, timeout(2_000).times(1)).submit(any(Runnable.class));
     }
 
-    @Test
-    void close_stopsListeningThreadGracefully() throws Exception {
-        ExecutorService executor = mock(ExecutorService.class);
-        int port = findFreePort();
-        TCPServer server = new TCPServer(executor, port);
+    server.close();
+    serverThread.join(2_000);
 
-        AtomicReference<@Nullable Throwable> listenFailure = new AtomicReference<>();
-        Thread serverThread = startServerThread(server, listenFailure);
+    assertFalse(serverThread.isAlive());
+    assertNull(listenFailure.get());
+  }
 
-        try (Socket ignored = connectWithRetry(port)) {
-            verify(executor, timeout(2_000).times(1)).submit(any(Runnable.class));
-        }
-
-        server.close();
-        serverThread.join(2_000);
-
-        assertFalse(serverThread.isAlive());
-        assertNull(listenFailure.get());
-    }
-
-    private static Thread startServerThread(TCPServer server, AtomicReference<Throwable> failureRef) {
-        Thread thread = new Thread(() -> {
-            try {
+  private static Thread startServerThread(TCPServer server, AtomicReference<Throwable> failureRef) {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
                 server.listen();
-            } catch (Throwable throwable) {
+              } catch (Throwable throwable) {
                 failureRef.set(throwable);
-            }
-        });
-        thread.setDaemon(true);
-        thread.start();
-        return thread;
+              }
+            });
+    thread.setDaemon(true);
+    thread.start();
+    return thread;
+  }
+
+  private static Socket connectWithRetry(int port) throws Exception {
+    Exception lastException = null;
+    for (int attempt = 0; attempt < 50; attempt++) {
+      try {
+        return new Socket("127.0.0.1", port);
+      } catch (IOException connectException) {
+        lastException = connectException;
+        Thread.sleep(50);
+      }
     }
 
-    private static Socket connectWithRetry(int port) throws Exception {
-        Exception lastException = null;
-        for (int attempt = 0; attempt < 50; attempt++) {
-            try {
-                return new Socket("127.0.0.1", port);
-            } catch (IOException connectException) {
-                lastException = connectException;
-                Thread.sleep(50);
-            }
-        }
+    assertNotNull(lastException);
+    throw lastException;
+  }
 
-        assertNotNull(lastException);
-        throw lastException;
+  private static int findFreePort() throws IOException {
+    try (ServerSocket socket = new ServerSocket(0)) {
+      return socket.getLocalPort();
     }
-
-    private static int findFreePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        }
-    }
+  }
 }
