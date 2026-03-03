@@ -1,5 +1,7 @@
 package transport.server.client;
 
+import java.io.IOException;
+import java.net.Socket;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
@@ -7,9 +9,6 @@ import org.jspecify.annotations.Nullable;
 import transport.server.wireprotocol.SocketMessageChannel;
 import transport.server.wireprotocol.WireMessage;
 import transport.server.wireprotocol.WireMessageUtility;
-
-import java.io.IOException;
-import java.net.Socket;
 
 @NullMarked
 @Slf4j
@@ -46,7 +45,7 @@ public class TCPClient implements AutoCloseable {
 
   static void main() {
     var client = new TCPClient(5432, "127.0.0.1");
-    try {
+    try (client) {
       client.connect();
     } catch (IOException e) {
       log.error("failed to connect to server", e);
